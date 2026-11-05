@@ -13,19 +13,37 @@ const lineStyles={
  'JR 中央線':['JC','#cc602b'],'JR 京葉線':['JE','#bf3656'],'JR 常磐線':['JJ','#2b8577'],
  '小田急線':['OH','#2580b2'],'京王線':['KO','#b3457e'],'東急東橫線':['TY','#b84848'],'西武池袋線':['SI','#9a740c']
 };
+// Floor values are illustrative and deliberately separate from real station data.
+const stationFloors={shinjuku:{lines:['2F','B1','1F','B2'],hall:'1F'},tokyo:{lines:['2F','B1','3F','B4'],hall:'1F'},shibuya:{lines:['2F','3F','B3','B5'],hall:'1F'},ueno:{lines:['2F','B1','B2','1F'],hall:'1F'},ikebukuro:{lines:['1F','B2','B3','1F'],hall:'B1'}};
+let selectedFloor='all';
+const floorHeight=f=>f.startsWith('B')?-Number(f.slice(1)):Number(f.slice(0,-1));
+function floorDirection(a,b){return a===b?'同層前進':floorHeight(b)>floorHeight(a)?'上樓':'下樓'}
+function floorInstruction(a,b){return a===b?`在 ${a} 同層前進`:`${accessible?'搭乘電梯':'使用樓梯／手扶梯'}${floorDirection(a,b)}，${a} → ${b}`}
 function routeModel(){
  const p=stationRoutes[active.station], ls=stations[active.station].lines;
  const a=ls.indexOf(active.from),b=ls.indexOf(active.to),variation=a+b-1;
  let points=p.points.map(([x,y])=>[x,y+(variation%3)*12]);
  if(a>b)points=points.map(([x,y])=>[760-x,y]);
  if(accessible)points=points.map(([x,y],i)=>[x,y+(i===1||i===2?22:0)]);
- return {...p,points,minutes:p.minutes+variation+(accessible?4:0),distance:p.distance+variation*70+(accessible?120:0)};
+ const f=stationFloors[active.station],floors=[f.lines[a],f.hall,f.hall,f.lines[b]];
+ return {...p,points,floors,minutes:p.minutes+variation+(accessible?4:0),distance:p.distance+variation*70+(accessible?120:0)};
 }
 function routeArrow(a,b){const dx=b[0]-a[0],dy=b[1]-a[1];return Math.abs(dx)>Math.abs(dy)?(dx>0?'→':'←'):(dy>0?'↓':'↑')}
 function renderStationMap(r){
- const pts=r.points, segments=pts.slice(1).map((p,i)=>`H${p[0]}V${p[1]}`).join(' '),d=`M${pts[0].join(' ')} ${segments}`;
- const labels=[r.labels[0],accessible?'電梯連接區':r.labels[1],r.labels[2],r.labels[3]];
- $('#map').innerHTML=`<defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#d5e2ee" stroke-width=".6"/></pattern></defs><rect width="780" height="385" fill="url(#grid)"/><g fill="#e2eaf3" stroke="#d0dce9"><rect x="46" y="39" width="204" height="36" rx="6"/><rect x="350" y="39" width="185" height="36" rx="6"/><rect x="565" y="39" width="165" height="36" rx="6"/></g><g fill="#617992" font-size="11" text-anchor="middle"><text x="148" y="62">${stations[active.station].name}站 · 模擬配置</text><text x="442" y="62">${r.level}</text><text x="647" y="62">${accessible?'電梯優先':'一般步行'}</text></g><path d="${d}" fill="none" stroke="white" stroke-width="25" stroke-linejoin="round"/><path id="routePath" d="${d}" fill="none" stroke="#30659b" stroke-width="7" stroke-linejoin="round" ${accessible?'stroke-dasharray="10 5"':''}/>${pts.map(([x,y],i)=>`<g class="map-node" data-step="${i}" tabindex="0" role="button" aria-label="步驟 ${i+1}：${labels[i]}"><circle cx="${x}" cy="${y}" r="16"/><text x="${x}" y="${y+4}">${i+1}</text></g><text x="${x}" y="${y+39}" text-anchor="middle" fill="#526d88" font-size="12">${labels[i]}</text>`).join('')}<text x="45" y="350" fill="#607b96" font-size="11">起點 1 → 終點 4　·　點選數字查看步驟</text><text x="555" y="350" fill="#607b96" font-size="11">${r.via}（模擬）</text>`;
- $('#map').setAttribute('aria-label',`${stations[active.station].name}站 ${active.from} 轉乘 ${active.to} 模擬動線`);
+ const pts=r.points,labels=[r.labels[0],accessible?'電梯連接區':r.labels[1],r.labels[2],r.labels[3]];
+ const floors=[...new Set(r.floors)].sort((a,b)=>floorHeight(b)-floorHeight(a));
+ if(selectedFloor!=='all'&&!floors.includes(selectedFloor))selectedFloor='all';
+ const show=i=>selectedFloor==='all'||r.floors[i]===selectedFloor;
+ $('#floorControls').innerHTML=`<span class="floor-label">樓層檢視</span>${['all',...floors].map(f=>`<button type="button" data-floor="${f}" aria-pressed="${f===selectedFloor}" class="${f===selectedFloor?'selected':''}">${f==='all'?'全部樓層':f}</button>`).join('')}<span class="floor-demo">模擬樓層</span>`;
+ document.querySelectorAll('[data-floor]').forEach(btn=>btn.onclick=()=>{selectedFloor=btn.dataset.floor;renderStep(false)});
+ const segments=pts.slice(1).map(([x,y],i)=>{
+  const [sx,sy]=pts[i],cross=r.floors[i]!==r.floors[i+1],visible=show(i)||show(i+1);
+  return `<g opacity="${visible?1:.12}"><path d="M${sx} ${sy}H${x}V${y}" fill="none" stroke="white" stroke-width="24" stroke-linejoin="round"/><path d="M${sx} ${sy}H${x}V${y}" fill="none" stroke="${cross?'#7c97b5':'#30659b'}" stroke-width="7" stroke-linejoin="round" ${cross?'stroke-dasharray="9 7"':''}/></g>`;
+ }).join('');
+ $('#map').innerHTML=`<defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#d5e2ee" stroke-width=".6"/></pattern></defs><rect width="780" height="385" fill="url(#grid)"/><g fill="#e2eaf3" stroke="#d0dce9"><rect x="46" y="8" width="205" height="24" rx="6"/><rect x="280" y="8" width="210" height="24" rx="6"/><rect x="520" y="8" width="215" height="24" rx="6"/></g><g fill="#617992" font-size="12" text-anchor="middle"><text x="148" y="25">${stations[active.station].name}站 · 模擬配置</text><text x="385" y="25">${selectedFloor==='all'?'全部樓層連接示意':selectedFloor+' 樓層動線'}</text><text x="627" y="25">${accessible?'電梯優先':'樓梯／手扶梯'}</text></g>${segments}${pts.map(([x,y],i)=>`<g opacity="${show(i)?1:.24}"><g class="map-node" data-step="${i}" tabindex="0" role="button" aria-label="步驟 ${i+1}：${r.floors[i]} ${labels[i]}"><circle cx="${x}" cy="${y}" r="16"/><text x="${x}" y="${y+4}">${i+1}</text></g><rect x="${x-23}" y="${y-44}" width="46" height="21" rx="5" fill="${show(i)?'#24588d':'#849bb3'}"/><text x="${x}" y="${y-29}" text-anchor="middle" fill="white" font-size="12" font-weight="600">${r.floors[i]}</text><text x="${x}" y="${y+39}" text-anchor="middle" fill="#526d88" font-size="12">${labels[i]}</text></g>`).join('')}<text x="45" y="350" fill="#607b96" font-size="11">實線：同層步行　 虛線：跨樓層連接</text><text x="535" y="350" fill="#607b96" font-size="11">${r.via}（模擬）</text>`;
+ $('#map').setAttribute('aria-label',`${stations[active.station].name}站樓層示意：${r.floors.join(' → ')}，${selectedFloor==='all'?'顯示全部樓層':'目前檢視 '+selectedFloor}`);
+ $('#floorJourney').innerHTML=r.floors.slice(1).map((f,i)=>`<div class="floor-leg ${i===Math.max(0,step-1)?'current':''}"><span>步驟 ${i+1} → ${i+2}</span><strong>${r.floors[i]} → ${f}</strong><small>${floorInstruction(r.floors[i],f)}</small></div>`).join('');
+ $('#floorStatus').textContent=`步驟 ${step+1} 所在樓層：${r.floors[step]}${selectedFloor!=='all'?' · 檢視 '+selectedFloor:''}`;
 }
 function paintLineBadge(el,name){const [code,color]=lineStyles[name]||['●','#30659b'];el.textContent=code;el.style.color=color;el.style.borderColor=color}
+

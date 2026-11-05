@@ -7,19 +7,23 @@ function modal(html){$('#modalContent').innerHTML=html;if(!$('#modal').open)$('#
 $('#closeModal').onclick=()=>$('#modal').close();$('#modal').onclick=e=>{if(e.target===$('#modal')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close()}};
 function options(){const s=stations[$('#station').value];for(const id of ['from','to'])$('#'+id).innerHTML=s.lines.map(l=>`<option>${l}</option>`).join('');$('#to').selectedIndex=1}
 function baseSteps(){return [{title:'下車後，先找轉乘指標',short:'月台出發',image:'platform.jpg',arrow:'↑',body:`從 ${active.from} 下車，先停下來確認「${active.to}」的路線名稱與方向。`,tip:'示意照片不一定來自所選車站。下車位置會影響路徑，請先查看月台上的轉乘指標，不要只跟著人群走。'},{title:accessible?'尋找電梯，前往轉乘樓層':'沿指標前往轉乘通道',short:accessible?'搭乘電梯':'前往通道',image:accessible?'platform.jpg':'passage.jpg',arrow:'↑',body:accessible?'辨識電梯圖示，確認可到達的樓層。此模式展示電梯優先的模擬流程。':'依轉乘指標前往樓梯或手扶梯，進入站內通道。先確認箭頭，再往前走。',tip:accessible?'照片僅作環境示意，並非電梯位置紀錄。實際電梯位置、服務狀態與無障礙動線請向站務人員確認。':'大型車站可能有不同閘口與出口。請找轉乘路線的名稱；出口指標不一定代表轉乘方向。'},{title:'認路線顏色，也確認名稱',short:'辨識指標',image:'signs.jpg',arrow:'↗',body:`在通道分岔處，確認「${active.to}」名稱與箭頭，繼續前往乘車區。`,tip:'不同營運公司的轉乘可能需要出閘再入閘。這個示範未判定票價與閘口，請依實際票券與現場指示通行。'},{title:'確認方向，準備下一段旅程',short:'抵達月台',image:'platform.jpg',arrow:'↓',body:`抵達 ${active.to} 乘車區後，核對目的地、行車方向與月台電子看板。`,tip:'同一條路線可能有不同方向、快慢車或直通運轉。請依目的地確認班次；本網站不提供即時列車資訊。'}]}
-function renderStep(){const data=steps(),s=data[step];$('#stepPhoto').src='assets/'+s.image;$('#stepPhoto').alt=s.title+'：使用者提供的環境示意照片';$('#stepCounter').textContent=`STEP 0${step+1} / 04`;$('#stepKicker').textContent=`0${step+1} / ${s.short}`;$('#stepTitle').textContent=s.title;$('#stepDescription').textContent=s.body;$('#photoArrow').textContent=s.arrow;$('#prev').disabled=step===0;$('#next').textContent=step===3?'完成導覽 ✓':'下一步 →';$('#stepTrack').innerHTML=data.map((s,i)=>`<button data-step="${i}" class="${i===step?'active':''}"><b>${i+1}</b>${s.short}</button>`).join('');document.querySelectorAll('.map-node').forEach((n,i)=>n.classList.toggle('active',i===step));document.querySelectorAll('[data-step]').forEach(n=>{n.onclick=()=>{step=Number(n.dataset.step);renderStep()};n.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();n.click()}}})}
+function renderStep(followFloor=true){const r=routeModel();if(followFloor&&selectedFloor!=='all')selectedFloor=r.floors[step];renderStationMap(r);const data=steps(),s=data[step];$('#stepPhoto').src='assets/'+s.image;$('#stepPhoto').alt=s.title+'：使用者提供的環境示意照片';$('#stepCounter').textContent=`STEP 0${step+1} / 04`;$('#stepKicker').textContent=`0${step+1} / ${r.floors[step]} · ${s.short}`;$('#stepTitle').textContent=s.title;$('#stepDescription').textContent=s.body;$('#photoArrow').textContent=s.arrow;$('#prev').disabled=step===0;$('#next').textContent=step===3?'完成導覽 ✓':'下一步 →';$('#stepTrack').innerHTML=data.map((s,i)=>`<button data-step="${i}" class="${i===step?'active':''}"><b>${i+1}</b>${s.short}</button>`).join('');document.querySelectorAll('.map-node').forEach((n,i)=>n.classList.toggle('active',i===step));document.querySelectorAll('[data-step]').forEach(n=>{n.onclick=()=>{step=Number(n.dataset.step);renderStep()};n.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();n.click()}}})}
 function key(r){return [r.station,r.from,r.to].join('|')}
 function savedState(){$('#savedCount').textContent=saved.length;$('#save').textContent=saved.some(r=>key(r)===key(active))?'♥ 已收藏':'♡ 收藏路線'}
 function steps(){
  const data=baseSteps(),r=routeModel(),name=stations[active.station].name;
  data[0].title=`從${name}站月台出發`;
  data[0].body=`從 ${active.from} 下車，尋找「${r.via}」的模擬指標，準備轉乘 ${active.to}。`;
- data[1].title=accessible?'搭乘電梯前往轉乘層':r.actions[0];
+ data[1].title=accessible?'電梯優先 · '+r.floors[1]+' 轉乘層':floorInstruction(r.floors[0],r.floors[1]);
  data[1].body=accessible?`此模擬路線經電梯連接區，前往${r.level}；請現場確認電梯位置。`:`沿圖中 1 → 2 的方向，前往${r.labels[1]}。${r.actions[0]}。`;
- data[2].title=r.actions[1];
+ data[2].title=`沿 ${r.floors[2]} 轉乘通道前進`;
  data[2].body=`由${accessible?'電梯連接區':r.labels[1]}前往${r.labels[2]}，再確認 ${active.to} 的方向指標。`;
  data[3].title=`抵達${name}站的轉乘月台`;
- data.forEach((s,i)=>{s.image=r.photos[i];s.arrow=i<3?routeArrow(r.points[i],r.points[i+1]):'✓';});
+ data[0].body=`在 ${r.floors[0]} 的 ${active.from} 下車，尋找「${r.via}」的模擬指標，準備轉乘 ${active.to}。`;
+ data[1].body=`${floorInstruction(r.floors[0],r.floors[1])}，抵達${accessible?'電梯連接區':r.labels[1]}。樓層與設施位置僅供示意。`;
+ data[2].body=`在 ${r.floors[2]} 沿${r.labels[2]}前進，確認 ${active.to} 的指標；下一段${floorInstruction(r.floors[2],r.floors[3])}。`;
+ data[3].body=`${floorInstruction(r.floors[2],r.floors[3])}，到達 ${r.floors[3]} 的 ${active.to} 模擬乘車區，核對行車方向與目的地。`;
+ data.forEach((s,i)=>{s.image=r.photos[i];s.arrow=i===3?'✓':r.floors[i]!==r.floors[i+1]?(floorDirection(r.floors[i],r.floors[i+1])==='上樓'?'↑':'↓'):routeArrow(r.points[i],r.points[i+1]);});
  return data;
 }
 function render(){
@@ -29,7 +33,7 @@ function render(){
  paintLineBadge($('.line-pair .line-badge'),active.from);paintLineBadge($('#toBadge'),active.to);
  $('#mapCaption').textContent=`${s.name}站・${r.via}（模擬）`;
  $('#minutes').textContent=r.minutes;$('#distance').textContent=r.distance;
- renderStationMap(r);savedState();renderStep();
+ selectedFloor='all';savedState();renderStep();
 }
 $('#station').onchange=options;$('#swap').onclick=()=>{const a=$('#from').value;$('#from').value=$('#to').value;$('#to').value=a};$('#search').onclick=()=>{if($('#from').value===$('#to').value)return toast('請選擇兩條不同的路線');active={station:$('#station').value,from:$('#from').value,to:$('#to').value};step=0;render();toast('已更新轉乘模擬路線')};
 function selectStation(id){$('#station').value=id;options();$('#search').click()}
